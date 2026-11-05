@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>사용법 — 머신러닝 기반 최적화 툴</title>
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+<nav class="topnav" aria-label="주요 메뉴">
+  <div class="topnav-inner">
+    <a class="topnav-brand" href="index.html">머신러닝 기반 최적화 툴 <small>build-2611-13 · 기획 원광재</small></a>
+    <ul class="topnav-links">
+      <li><a href="index.html">도구</a></li>
+      <li><a href="guide.html" class="active" aria-current="page">사용법</a></li>
+      <li><a href="plan.html">기획서</a></li>
+    </ul>
+  </div>
+</nav>
+<header class="hero"><div class="wrap">
+  <div class="eyebrow">사용법</div>
+  <h1>실험 데이터 한 장으로 예측 모델과 최적 조건을 찾습니다</h1>
+  <p>데이터 넣기 → 학습 설정 → 모델 비교 → 최적 조건 탐색 → 저장 순서로 진행합니다.
+  계산은 전부 이 브라우저 안에서 끝나고 파일은 어디로도 올라가지 않습니다.</p>
+</div></header>
+<main><div class="wrap">
+<div class="card">
+  <h2 style="margin-top:0">1. 데이터</h2>
+  <p>행 하나가 Run(실험·해석 1회)이고, 열은 설계인자와 결과값입니다. 첫 줄은 열 이름입니다.</p>
+  <div class="tablewrap"><table>
+    <thead><tr><th>Run</th><th>온도(℃)</th><th>압력(bar)</th><th>시간(분)</th><th>강도(MPa)</th></tr></thead>
+    <tbody><tr><td>R01</td><td>217</td><td>9.8</td><td>23</td><td>59.04</td></tr><tr><td>R02</td><td>208</td><td>2.3</td><td>57</td><td>56.83</td></tr></tbody>
+  </table></div>
+  <p class="sub" style="margin-top:10px">CSV(UTF-8 · 엑셀이 저장한 한글 CSV 모두) 와 엑셀 첫 시트를 읽습니다. 엑셀에서 여러 칸을 복사해 표에 붙여넣어도 됩니다.</p>
+  <p>숫자가 아닌 칸이나 빈 칸이 있는 행은 학습에서 빼고, 몇 행의 어느 열 때문인지 화면에 보여 줍니다.
+  Run 열 · 목표(결과값) · 설계인자는 표 아래에서 고릅니다. 결과 열이 여러 개면 목표로 하나를 고르고 나머지는 설계인자에서 빼세요.</p>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">2. 학습 설정과 하이퍼파라미터</h2>
+  <p>학습 비율(기본 80%)만큼 Run 을 무작위로 골라 학습에 쓰고, 나머지로 검증합니다. 시드가 같으면 늘 같은 Run 이 검증으로 갑니다.</p>
+  <p>모델은 가우시안 프로세스 회귀(GPR)이고 RBF 커널을 씁니다. 입력과 출력은 평균 0 · 표준편차 1 로 표준화한 뒤 학습합니다.</p>
+  <ul style="margin-left:20px">
+    <li><b>길이 척도 ℓ</b> — 클수록 완만한 곡면을 그립니다. 너무 작으면 Run 사이를 들쭉날쭉하게 잇습니다.</li>
+    <li><b>신호 크기 σf</b> — 결과값이 평균에서 벗어나는 정도입니다.</li>
+    <li><b>노이즈 σn</b> — 같은 조건에서도 생기는 측정 잡음입니다. 너무 작으면 잡음까지 외워 과적합합니다.</li>
+  </ul>
+  <p>세 값마다 최소 · 최대 · 개수를 적으면 로그 간격으로 나눈 모든 조합의 모델을 만듭니다(기본 5 × 3 × 3 = 45개).</p>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">3. 모델 비교 · 선정</h2>
+  <p>검증 R² 가 가장 큰 모델을 자동으로 고릅니다. 같으면 로그 주변우도(데이터를 얼마나 잘 설명하는지)가 큰 쪽입니다.
+  표의 다른 행을 누르면 그 모델로 바뀝니다.</p>
+  <p>R² = 1 − (잔차 제곱합 ÷ 실측의 평균 대비 제곱합)입니다. 1 에 가까울수록 좋고, 0 이면 평균으로 찍은 것과 같습니다.
+  예측값-실측값 그래프는 점이 y = x 선에 붙을수록, 잔차 그래프는 0 주위에 고르게 흩어질수록 좋습니다.</p>
+  <p>파레토 차트는 한 인자만 데이터 범위 안에서 바꿀 때 예측이 움직이는 폭입니다(다른 인자는 데이터 평균에 고정). 인자끼리 함께 작용하는 효과는 다 담기지 않습니다.</p>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">4. 최적 조건 탐색</h2>
+  <p>최적화에는 고른 하이퍼파라미터로 <b>학습+검증 데이터 전체</b>를 다시 학습한 모델을 씁니다.
+  인자마다 최소 · 최대 · 간격을 적으면 모든 조합의 예측을 계산해 상위 10개 조건을 보여 줍니다. 조합이 20만 개를 넘으면 간격을 넓히도록 멈춥니다.</p>
+  <p>목표는 최대화 · 최소화 · 목표값에 가깝게 중에서 고릅니다. 예측 표준편차가 크면 그 근처에 데이터가 적다는 뜻입니다.
+  학습 데이터 범위 밖 조건에는 「범위 밖」 표시가 붙습니다 — 외삽이라 믿음직하지 않습니다.</p>
+  <p><b>예측값은 모델 추정이며 확인 실험이 필요합니다.</b></p>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">5. 저장 · 내보내기</h2>
+  <p>모델 저장(JSON)에는 표준화 계수 · 하이퍼파라미터 · 학습 데이터가 들어 있어 다시 불러오면 같은 예측을 냅니다.
+  엑셀 내보내기는 데이터 · 모델비교 · 검증예측 · 최적조건 네 시트입니다.</p>
+</div>
+<div class="card">
+  <h2 style="margin-top:0">6. 이번 판에서 하지 않는 것</h2>
+  <ul style="margin-left:20px">
+    <li>수천 행 이상의 큰 데이터 — 브라우저 안에서 계산하므로 수백 행 규모에 맞춰 두었습니다.</li>
+    <li>인자마다 다른 길이 척도(ARD) · 다른 커널 · 경사 기반 하이퍼파라미터 최적화 — 정해진 범위의 격자 탐색만 합니다.</li>
+    <li>범주형(글자) 설계인자 — 숫자 인자만 씁니다.</li>
+    <li>결과값 여러 개를 동시에 최적화하는 다목적 최적화.</li>
+  </ul>
+</div>
+</div></main>
+<footer><div class="wrap">생성형 AI 업무자동화 전문가과정 2차수 · 프로젝트 13 · 기획 원광재</div></footer>
+</body>
+</html>

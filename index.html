@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>머신러닝 기반 최적화 툴 — GPR 예측 모델과 최적 설계조건</title>
+<meta name="description" content="실험·해석 데이터를 올리면 가우시안 프로세스 회귀(GPR) 모델을 하이퍼파라미터별로 만들어 비교하고, 고른 모델로 Grid Search 를 돌려 최적 설계조건을 찾습니다. 파일은 브라우저 안에서만 처리합니다.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="canonical" href="https://build-2611-13.jobability.co.kr/">
+<meta name="robots" content="index,follow">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="생성형 AI 업무자동화 전문가과정 · 2차수">
+<meta property="og:url" content="https://build-2611-13.jobability.co.kr/">
+<meta property="og:title" content="머신러닝 기반 최적화 툴 — 생성형 AI 업무자동화 전문가과정 2차수">
+<meta property="og:description" content="실험 데이터로 GPR 모델을 만들어 비교하고 Grid Search 로 최적 설계조건을 찾습니다.">
+<meta property="og:image" content="https://build-2611-13.jobability.co.kr/og-index.png">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta property="og:locale" content="ko_KR">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="stylesheet" href="css/style.css">
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<nav class="topnav" aria-label="주요 메뉴">
+  <div class="topnav-inner">
+    <a class="topnav-brand" href="index.html">머신러닝 기반 최적화 툴 <small>build-2611-13 · 기획 원광재</small></a>
+    <ul class="topnav-links">
+      <li><a href="#s-data">데이터</a></li>
+      <li><a href="#s-train">학습</a></li>
+      <li><a href="#s-models">모델 비교</a></li>
+      <li><a href="#s-opt">최적화</a></li>
+      <li><a href="guide.html">사용법</a></li>
+      <li><a href="plan.html">기획서</a></li>
+    </ul>
+  </div>
+</nav>
+
+<header class="hero"><div class="wrap">
+  <div class="eyebrow">생성형 AI 업무자동화 전문가과정 · 2차수 · 프로젝트 13</div>
+  <h1>머신러닝 기반 최적화 툴</h1>
+  <p>실험·해석 데이터로 <b>가우시안 프로세스 회귀(GPR)</b> 모델을 하이퍼파라미터 조합마다 만들어 <b>R²로 비교</b>하고,
+     고른 모델로 <b>Grid Search</b> 를 돌려 최적 설계조건과 예측 불확실성을 보여 줍니다.</p>
+</div></header>
+
+<main><div class="wrap">
+
+<section id="s-data" class="card">
+  <h2 style="margin-top:0">1. 데이터를 넣으세요</h2>
+  <p class="sub">행은 Run, 열은 설계인자와 결과값입니다. CSV·엑셀을 불러오거나 아래 표에 직접 적으세요.</p>
+  <label class="drop" id="drop">
+    <input type="file" id="file" accept=".csv,.xlsx,.xls,.txt">
+    <b>CSV·엑셀 파일을 끌어다 놓거나 눌러서 고르세요</b>
+    <span>파일은 서버로 올라가지 않습니다 · 계산은 이 브라우저 안에서만 합니다</span>
+  </label>
+  <div class="btnrow">
+    <button class="btn primary" id="btn-sample">예제로 해보기</button>
+    <button class="btn" id="btn-template">CSV 양식 내려받기</button>
+    <label class="btn" for="model-file">저장한 모델 불러오기</label>
+    <input type="file" id="model-file" accept=".json,application/json">
+  </div>
+  <p class="sub" style="margin-top:10px">예제 데이터는 실제 사내 데이터가 아닙니다 — 알려진 함수에 잡음을 더해 만든 가짜 실험 30 Run 입니다.</p>
+
+  <h3>데이터 표</h3>
+  <div class="btnrow tight">
+    <button class="btn sm" id="btn-addrow">행 추가</button>
+    <button class="btn sm" id="btn-addcol">열 추가</button>
+    <button class="btn sm" id="btn-clear">표 비우기</button>
+  </div>
+  <div class="tablewrap grid-edit" id="grid"></div>
+  <div class="roles" id="roles"></div>
+  <div id="data-status"></div>
+</section>
+
+<section id="s-train" class="card" hidden>
+  <h2 style="margin-top:0">2. 학습 설정</h2>
+  <div class="form">
+    <label>학습 데이터 비율(%) <input type="number" id="ratio" value="80" min="50" max="95" step="5"></label>
+    <label>분할 시드 <input type="number" id="seed" value="42" step="1"></label>
+    <div class="split-info" id="split-info"></div>
+  </div>
+  <p class="sub">같은 시드면 같은 Run 이 검증으로 갑니다. 시드를 바꾸면 다른 분할로 다시 확인할 수 있습니다.</p>
+  <h3>하이퍼파라미터 탐색 범위</h3>
+  <p class="sub">입력·출력을 표준화(평균 0 · 표준편차 1)한 뒤의 값입니다. 최소와 최대 사이를 로그 간격으로 나눕니다.</p>
+  <div class="tablewrap"><table id="hyper-tbl">
+    <thead><tr><th>하이퍼파라미터</th><th>뜻</th><th>최소</th><th>최대</th><th>개수</th><th>값</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+  <div class="btnrow">
+    <button class="btn primary" id="btn-train">모델 학습 · 비교</button>
+    <span class="count" id="h-count"></span>
+  </div>
+</section>
+
+<section id="s-models" class="card" hidden>
+  <h2 style="margin-top:0">3. 모델 비교 · 평가</h2>
+  <div id="chosen"></div>
+  <h3>하이퍼파라미터별 검증 R²</h3>
+  <p class="sub">값 하나마다 나머지 두 하이퍼파라미터를 어떻게 골랐을 때든 가장 좋았던 검증 R² 입니다. 굵은 점이 고른 모델입니다.</p>
+  <div class="charts three" id="hyper-charts"></div>
+  <h3>모델 목록 <small class="sub">검증 R² 큰 순 · 같으면 로그 주변우도 큰 순 · 다른 행을 눌러 고를 수 있습니다</small></h3>
+  <div class="tablewrap models" id="models"></div>
+  <div class="charts two">
+    <div><h3>예측값 - 실측값</h3><div id="parity" class="chart"></div></div>
+    <div><h3>잔차(실측 - 예측)</h3><div id="resid" class="chart"></div></div>
+  </div>
+  <h3>설계인자 영향도(파레토)</h3>
+  <div class="charts two">
+    <div id="pareto" class="chart"></div>
+    <div class="note" id="pareto-how"></div>
+  </div>
+</section>
+
+<section id="s-opt" class="card" hidden>
+  <h2 style="margin-top:0">4. 최적 설계조건 탐색(Grid Search)</h2>
+  <p class="sub" id="opt-model"></p>
+  <div class="tablewrap"><table id="spec">
+    <thead><tr><th>설계인자</th><th>데이터 범위</th><th>최소</th><th>최대</th><th>간격</th><th>점 수</th></tr></thead>
+    <tbody></tbody>
+  </table></div>
+  <div class="form">
+    <label>목표
+      <select id="goal">
+        <option value="max">최대화</option>
+        <option value="min">최소화</option>
+        <option value="target">목표값에 가깝게</option>
+      </select></label>
+    <label id="f-target" hidden>목표값 <input type="number" id="target-val" step="any"></label>
+  </div>
+  <div class="btnrow">
+    <button class="btn primary" id="btn-opt">최적 조건 찾기</button>
+    <span class="count" id="g-count"></span>
+  </div>
+  <div id="opt-result"></div>
+  <div id="curves-wrap" hidden>
+    <h3>설계인자별 반응 곡선</h3>
+    <p class="sub">다른 인자는 1순위 최적 조건에 고정하고 한 인자만 바꿀 때의 예측 평균과 ±1σ 띠입니다. 세로 점선이 최적값입니다.</p>
+    <div class="charts three" id="curves"></div>
+  </div>
+</section>
+
+<section id="s-out" class="card" hidden>
+  <h2 style="margin-top:0">5. 저장 · 내보내기</h2>
+  <p class="sub">모델 파일(JSON)에는 표준화 계수 · 하이퍼파라미터 · 학습 데이터가 들어 있습니다. 다시 불러오면 같은 예측을 냅니다.
+    학습 데이터가 들어 있으니 사외로 보낼 때 주의하세요.</p>
+  <div class="btnrow">
+    <button class="btn" id="btn-save">모델 저장(JSON)</button>
+    <button class="btn green" id="btn-export">결과 엑셀로 내보내기</button>
+  </div>
+  <p class="sub" style="margin-top:10px">엑셀 시트: 데이터 · 모델비교 · 검증예측 · 최적조건</p>
+</section>
+
+</div></main>
+
+<footer><div class="wrap">
+  생성형 AI 업무자동화 전문가과정 2차수 · 프로젝트 13 · 기획 원광재 ·
+  예제 데이터는 실제 사내 데이터가 아닙니다.
+</div></footer>
+
+<script src="lib/xlsx.full.min.js"></script>
+<script src="js/gpr.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>
