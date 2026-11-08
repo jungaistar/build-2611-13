@@ -175,5 +175,105 @@ eq([rep['데이터'].length, rep['모델비교'].length, rep['검증예측'].len
 ok(rep['최적조건'].some(function (r) { return /확인 실험이 필요/.test(r.join(' ')); }), '최적조건 시트에 주의 문장');
 eq(rep['모델비교'][1][9], '선택', '선택 모델 표시');
 
+// (v1.1) Case 열도 Run 이름 열로 본다
+eq(G.guessColumns([{ Case: 'Case1', A: 1, Y: 2 }, { Case: 'Case2', A: 2, Y: 3 }]).runCol, 'Case', 'Case 열 = Run 열');
+
+// (v1.1) RBFNN
+eq(G.linInts(4, 30, 4), [4, 13, 21, 30], '중심 수 후보는 정수로 고르게');
+eq(G.linInts(3, 4, 5), [3, 4], '정수 후보는 겹치지 않는다');
+var rrg = { k: { min: 4, max: 30, n: 4 }, width: { min: 0.3, max: 3, n: 5 }, lambda: { min: 1e-6, max: 0.1, n: 3 } };
+eq(G.hyperGrid(rrg, 'rbf').length, 60, 'RBFNN 조합 수 4×5×3');
+eq(G.hyperGrid(rg, 'gp'), G.hyperGrid(rg), 'GP 조합 순서는 v1.0 과 같다');
+var km = G.kmeans([[0, 0], [0.1, 0], [0, 0.1], [5, 5], [5.1, 5], [5, 5.1]], 2, 1).map(function (c) { return Math.round(c[0] + c[1]); }).sort();
+eq(km, [0, 10], 'k-평균이 두 무리의 중심을 찾는다');
+var mr = G.rbfFit(Xs, ys, { k: 20, width: 0.6, lambda: 1e-8 });
+eq([mr.type, mr.kEff, mr.w.length], ['rbf', 20, 21], 'RBFNN: 중심 20 + 절편');
+var r2r = G.metrics(yt, G.predict(mr, Xt).mean).r2;
+ok(r2r > 0.95, 'RBFNN sin(x) 처음 보는 점 R² > 0.95', r2r);
+eq(G.predict(mr, [[1]]).sd, [null], 'RBFNN 은 예측 표준편차가 없다');
+near(G.predictMean(mr, [1.3]), G.predict(mr, [[1.3]]).mean[0], 1e-12, 'RBFNN predictMean = predict');
+var mr2 = G.rbfFit(Xs, ys, { k: 8, width: 0.8, lambda: 1e-6 });
+ok(mr2.kEff === 8 && G.metrics(yt, G.predict(mr2, Xt).mean).r2 > 0.9, 'k-평균 중심 8개로도 sin(x) R² > 0.9', G.metrics(yt, G.predict(mr2, Xt).mean).r2);
+var lamBig = G.rbfFit(Xs, ys, { k: 20, width: 0.6, lambda: 1e3 });
+ok(Math.max.apply(null, G.predict(lamBig, Xt).mean.map(Math.abs)) < 0.2, '규제 λ 가 아주 크면 예측이 평균(0) 쪽으로 눌린다');
+var kerr = false; try { G.rbfFit(Xs, ys, { k: 0, width: 1, lambda: 0 }); } catch (e) { kerr = true; }
+ok(kerr, '중심 수 0 은 거절');
+var rres = G.searchHyper(smp.X, smp.y, sp, rrg, 'rbf');
+eq([rres.length, rres[0].type, rres[0].logML], [60, 'rbf', null], 'RBFNN 모델 60개 · 로그우도 없음');
+ok(rres[0].test.r2 > 0.9, '예제 RBFNN 최적 모델 검증 R² > 0.9', rres[0].test.r2);
+ok(rres.every(function (r) { return r.kEff <= sp.train.length; }), '실제 중심 수는 학습 Run 수를 넘지 않는다');
+var rtie = [{ test: { r2: 0.9 }, logML: null, kEff: 20, hyper: { lambda: 1e-3 } }, { test: { r2: 0.9 }, logML: null, kEff: 8, hyper: { lambda: 1e-6 } }, { test: { r2: 0.9 }, logML: null, kEff: 8, hyper: { lambda: 1e-2 } }];
+eq(rtie.slice().sort(G.rank).map(function (r) { return r.kEff + '/' + r.hyper.lambda; }), ['8/0.01', '8/0.000001', '20/0.001'], 'RBFNN 동률이면 중심 수 적은 쪽 · 규제 큰 쪽');
+var rev = G.evaluate(smp.X, smp.y, sp, rres[0].hyper, 'rbf');
+near(rev.test.r2, rres[0].test.r2, 1e-12, 'RBFNN 평가 R² = 탐색 표의 R²');
+eq([rev.type, rev.final.type, rev.final.y.length], ['rbf', 'rbf', 30], 'RBFNN 최종 모델은 전체 30 Run');
+ok(/규제 λ/.test(G.diagnose({ type: 'rbf', train: { r2: 0.99 }, test: { r2: 0.6 } }).join()), 'RBFNN 과적합 안내는 λ·k 로');
+var ropt = G.gridSearch(rev.final, spec, 'max');
+var rb1 = ropt.top[0].x;
+ok(Math.abs(rb1[0] - 210) <= 20 && Math.abs(rb1[1] - 6.5) <= 2, 'RBFNN Grid Search 도 참 최대점 근처', rb1.join(','));
+eq(ropt.top[0].sd, null, 'RBFNN 최적 조건에는 표준편차가 없다');
+var rpar = G.pareto(rev.final, smp.inputs, base, bnd);
+eq(rpar.map(function (p) { return p.name; })[2], '시간(분)', 'RBFNN 영향도도 시간이 가장 작다');
+
+// (v1.1) 반응 곡면 — 격자 값은 그 점의 predict 와 같다
+var sg = G.surfaceGrid(ev.final, base, 0, 1, bnd[0], bnd[1], 11);
+eq([sg.xs.length, sg.ys.length, sg.mean.length, sg.mean[0].length, sg.hasSd], [11, 11, 11, 11, true], '곡면 11×11');
+eq([sg.xs[0], sg.xs[10], sg.ys[0], sg.ys[10]], [bnd[0].min, bnd[0].max, bnd[1].min, bnd[1].max], '곡면 축은 범위 끝에서 끝까지');
+var gmax = 0;
+[[0, 0], [3, 7], [10, 10], [5, 2]].forEach(function (q) {
+  var x = base.slice(); x[0] = sg.xs[q[0]]; x[1] = sg.ys[q[1]];
+  var pq = G.predict(ev.final, [x]);
+  gmax = Math.max(gmax, Math.abs(pq.mean[0] - sg.mean[q[1]][q[0]]), Math.abs(pq.sd[0] - sg.sd[q[1]][q[0]]));
+});
+ok(gmax < 1e-12, '곡면 mean[j][i]·sd[j][i] = (xs[i], ys[j]) 의 predict', gmax);
+var flat = [].concat.apply([], sg.mean);
+eq([sg.zmin, sg.zmax], [Math.min.apply(null, flat), Math.max.apply(null, flat)], '곡면 z 범위');
+var fixed = base.slice(); fixed[2] = 15;
+var sg2 = G.surfaceGrid(ev.final, fixed, 0, 1, bnd[0], bnd[1], 11), x2 = fixed.slice(); x2[0] = sg2.xs[4]; x2[1] = sg2.ys[6];
+near(sg2.mean[6][4], G.predictMean(ev.final, x2), 1e-12, '고르지 않은 인자는 고정값으로 계산');
+ok(sg2.zmax < sg.zmax, '시간을 15분에 고정하면 곡면이 낮아진다(참 함수 시간 증가 → 강도 증가)', sg2.zmax + ' < ' + sg.zmax);
+var sgr = G.surfaceGrid(rev.final, base, 2, 0, bnd[2], bnd[0], 5);
+eq([sgr.hasSd, sgr.sd], [false, null], 'RBFNN 곡면은 σ 없음');
+x2 = base.slice(); x2[2] = sgr.xs[3]; x2[0] = sgr.ys[1];
+near(sgr.mean[1][3], G.predictMean(rev.final, x2), 1e-12, 'RBFNN 곡면 값 = predict');
+var serr = false; try { G.surfaceGrid(ev.final, base, 1, 1, bnd[1], bnd[1]); } catch (e) { serr = true; }
+ok(serr, '가로·세로가 같은 인자면 거절');
+var pv = G.project([1, 0, 0], { yaw: 0, pitch: 0 });
+eq([pv.x, pv.y], [1, 0], '정사영: 정면에서 x 축은 오른쪽');
+pv = G.project([0, 0, 1], { yaw: 0, pitch: 0 });
+eq([pv.x, pv.y], [0, 1], '정사영: z 는 위');
+pv = G.project([0, 1, 0], { yaw: Math.PI / 2, pitch: 0 });
+near(pv.x, -1, 1e-12, '정사영: yaw 90° 면 y 축이 왼쪽으로');
+eq([G.colormap(0), G.colormap(1)], [[68, 1, 84], [253, 231, 37]], '색: 낮음 보라 · 높음 노랑');
+ok(G.pointInPoly(0.5, 0.5, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }]) && !G.pointInPoly(2, 0.5, [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 1, y: 1 }, { x: 0, y: 1 }]), '다각형 안·밖 판정');
+
+// (v1.1) 저장 파일의 사용법 — 적힌 코드로 실제 예측이 나와야 한다
+[['gp', ev.final], ['rbf', rev.final]].forEach(function (pr) {
+  var o = JSON.parse(JSON.stringify(G.toJSON(pr[1], { inputs: smp.inputs, target: smp.target, runs: smp.runs })));
+  var u = o._사용법;
+  eq(Object.keys(o)[0], '_사용법', pr[0] + ': 사용법이 파일 맨 앞');
+  eq(o.modelType, pr[0], pr[0] + ': 모델 종류 기록');
+  ok(u.입력_순서.length === 3 && /^1\. 온도\(℃\) — 원래 단위/.test(u.입력_순서[0]) && /^3\. 시간\(분\)/.test(u.입력_순서[2]), pr[0] + ': 입력 이름·순서·단위 안내', JSON.stringify(u.입력_순서));
+  ok(/강도\(MPa\)/.test(u.출력), pr[0] + ': 출력 이름');
+  var jsPred = new Function('m', 'x', u.JavaScript.join('\n') + '\nreturn predict(m, x);');
+  var worst = 0;
+  probe.concat([u.예시.입력]).forEach(function (x) { worst = Math.max(worst, Math.abs(jsPred(o, x) - G.predictMean(pr[1], x))); });
+  ok(worst < 1e-9, pr[0] + ': 사용법 JavaScript 코드 = 엔진 예측', worst);
+  near(u.예시.결과, G.predictMean(pr[1], u.예시.입력), 1e-6, pr[0] + ': 사용법 예시 결과');
+  ok(/print\(predict\(\[/.test(u.Python.join('\n')), pr[0] + ': Python 예시');
+  ok(pr[0] === 'gp' ? /저장한 모델 불러오기/.test(u.표준편차) : /표준편차\(σ\)를 내지 않습니다/.test(u.표준편차), pr[0] + ': 표준편차 안내');
+  var bk = G.fromJSON(JSON.stringify(o)), q1 = G.predict(pr[1], probe), q2 = G.predict(bk.model, probe);
+  ok(bk.type === pr[0] && q1.mean.every(function (v, i) { return Math.abs(v - q2.mean[i]) < 1e-9 && (q1.sd[i] == null ? q2.sd[i] == null : Math.abs(q1.sd[i] - q2.sd[i]) < 1e-9); }), pr[0] + ': 사용법을 넣어도 저장 → 불러오기 예측 동일');
+});
+var v10 = JSON.parse(js); delete v10.modelType; delete v10._사용법; delete v10.alpha;
+eq(G.fromJSON(v10).type, 'gp', 'v1.0 모델 파일(종류 없음)은 GP 로 읽는다');
+var broken = JSON.parse(JSON.stringify(G.toJSON(rev.final, { inputs: smp.inputs }))); broken.weights.pop();
+var berr = false; try { G.fromJSON(broken); } catch (e) { berr = /중심·가중치/.test(e.message); }
+ok(berr, 'RBFNN 가중치 수가 맞지 않으면 거절');
+var rrep = G.reportSheets({ modelType: 'rbf', inputs: smp.inputs, target: smp.target, X: smp.X, y: smp.y, runs: smp.runs, split: sp, results: rres, chosen: rres[0].id, evaluation: rev, optimum: ropt });
+eq(rrep['모델비교'][0].slice(1, 4).concat([rrep['모델비교'][0][8]]), ['중심 수 k', '폭 σ', '규제 λ', '실제 중심 수'], 'RBFNN 모델비교 시트 머리줄');
+ok(/GP 전용/.test(rrep['검증예측'][0][5]) && rrep['검증예측'][1][5] === '', 'RBFNN 검증예측 시트는 σ 칸이 비고 GP 전용이라 적는다');
+ok(rrep['최적조건'].some(function (r) { return /RBFNN 모델/.test(r.join(' ')); }), '최적조건 시트에 모델 종류');
+
 console.log('\n통과 ' + passed + ' · 실패 ' + failed);
 process.exit(failed ? 1 : 0);

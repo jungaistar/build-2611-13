@@ -51,11 +51,32 @@ srv.listen(0, async function () {
     await pg.waitForSelector('#opt-top tbody tr', { timeout: 10000 });
     ok(await count(pg, '#opt-top tbody tr') === 10, '상위 10개 조건');
     ok(/확인 실험이 필요/.test(await pg.textContent('#opt-result')), '확인 실험 안내');
-    ok(await count(pg, '#curves svg polygon.band') === 3, '설계인자별 반응 곡선 ±1σ 띠');
+    // (v1.1) 반응 곡면 — 두 축 + 나머지 인자 고정 막대
+    ok(await pg.isVisible('#surf-canvas'), '반응 곡면 캔버스');
+    ok(await count(pg, '#surf-fixed input[type=range]') === 1 && await count(pg, '#surf-fixed input[type=number]') === 1, '3인자 중 고르지 않은 1개에 막대 + 숫자 칸');
+    var z1 = await pg.evaluate(function () { return window.__surf.grid.zmax; });
+    var fxj = await pg.getAttribute('#surf-fixed input[type=range]', 'data-fx');
+    await pg.fill('#surf-fixed input[type=number]', String(await pg.getAttribute('#surf-fixed input[type=range]', 'min')));
+    var z2 = await pg.evaluate(function () { return window.__surf.grid.zmax; });
+    ok(Math.abs(z1 - z2) > 1e-6, '고정값을 바꾸면 곡면이 다시 계산된다', z1 + ' → ' + z2);
+    ok(await pg.evaluate(function (j) { return +document.querySelector('[data-fx="' + j + '"]').value === +document.querySelector('[data-fxn="' + j + '"]').value; }, fxj), '숫자 칸과 막대가 같은 값');
+    await pg.click('#btn-fix-opt');
+    ok(await pg.evaluate(function () { return window.__surf.atOpt; }), '1순위 최적 조건으로 고정');
+    await pg.$eval('#surf-canvas', function (c) { c.scrollIntoView({ block: 'center' }); });
+    var bx = await pg.$eval('#surf-canvas', function (c) { var r = c.getBoundingClientRect(); return { x: r.left + r.width * 0.45, y: r.top + r.height * 0.55 }; });
+    await pg.mouse.move(bx.x, bx.y);
+    ok(/예측 [\d.\-]+ ± [\d.e\-]+ \(1σ\)/.test(await pg.textContent('#surf-read')), 'GP 곡면 위 값에 ±1σ', await pg.textContent('#surf-read'));
+    var yaw0 = await pg.evaluate(function () { return window.__surf.view.yaw; });
+    await pg.mouse.down(); await pg.mouse.move(bx.x + 80, bx.y + 10, { steps: 4 }); await pg.mouse.up();
+    ok(Math.abs(await pg.evaluate(function () { return window.__surf.view.yaw; }) - yaw0) > 0.3, '끌면 곡면이 돈다');
+    await pg.selectOption('#sx', await pg.$eval('#sy', function (s) { return s.value; }));
+    ok(await pg.evaluate(function () { return window.__surf.ix !== window.__surf.iy; }), 'X·Y 에 같은 인자를 고르면 맞바꾼다');
     var top1 = await pg.textContent('#opt-top tbody tr:first-child');
     var dl = await Promise.all([pg.waitForEvent('download'), pg.click('#btn-save')]);
     var mfile = path.join(tmp, 'model.json'); await dl[0].saveAs(mfile);
-    ok(/gpr-optimizer-model/.test(fs.readFileSync(mfile, 'utf8')), '모델 JSON 내려받기');
+    var saved = JSON.parse(fs.readFileSync(mfile, 'utf8'));
+    ok(saved.format === 'gpr-optimizer-model' && saved.modelType === 'gp', '모델 JSON 내려받기(GP)');
+    ok(Object.keys(saved)[0] === '_사용법' && saved._사용법.입력_순서.length === 3 && saved._사용법.JavaScript.length > 3, '모델 JSON 맨 앞에 사용법');
     var dx = await Promise.all([pg.waitForEvent('download'), pg.click('#btn-export')]);
     ok(/\.xlsx$/.test(dx[0].suggestedFilename()), '엑셀 내보내기', dx[0].suggestedFilename());
     // 새로 열고 모델만 불러와도 같은 최적 조건이 나온다
@@ -67,6 +88,39 @@ srv.listen(0, async function () {
     await pg.click('#btn-opt');
     await pg.waitForSelector('#opt-top tbody tr');
     ok(await pg.textContent('#opt-top tbody tr:first-child') === top1, '불러온 모델의 최적 조건이 저장 전과 같다');
+    // (v1.1) RBFNN — 왼쪽 메뉴에서 고르고 같은 흐름
+    await pg.click('#btn-sample');
+    await pg.waitForSelector('#parity circle', { timeout: 10000 });
+    await pg.check('input[name=mtype][value=rbf]');
+    ok(await pg.isHidden('#s-models') && /중심 수 k/.test(await pg.textContent('#hyper-tbl')), 'RBFNN 을 고르면 그 하이퍼파라미터 표');
+    ok(/모델 60개/.test(await pg.textContent('#h-count')), 'RBFNN 조합 60개');
+    await pg.click('#btn-train');
+    await pg.waitForSelector('#parity circle', { timeout: 10000 });
+    ok(await count(pg, '#models tbody tr') === 60 && /RBFNN/.test(await pg.textContent('#chosen')), 'RBFNN 모델 60개 비교표');
+    ok(parseFloat(await pg.textContent('#chosen .stat b')) > 0.9, 'RBFNN 자동 선정 검증 R² > 0.9');
+    ok(await count(pg, '#side-results div') >= 2, '왼쪽 메뉴에 두 모델 성능');
+    await pg.fill('#g-step-0', '10');
+    await pg.click('#btn-opt');
+    await pg.waitForSelector('#opt-top tbody tr');
+    ok(/GP 전용/.test(await pg.textContent('#opt-top thead')) && /^—$/.test((await pg.textContent('#opt-top tbody tr:first-child td:nth-last-child(2)')).trim()), 'RBFNN 최적 조건: σ 는 GP 전용');
+    await pg.$eval('#surf-canvas', function (c) { c.scrollIntoView({ block: 'center' }); });
+    bx = await pg.$eval('#surf-canvas', function (c) { var r = c.getBoundingClientRect(); return { x: r.left + r.width * 0.45, y: r.top + r.height * 0.55 }; });
+    await pg.mouse.move(bx.x - 5, bx.y); await pg.mouse.move(bx.x, bx.y);
+    ok(/GP 모델 전용/.test(await pg.textContent('#surf-read')), 'RBFNN 곡면 값에 σ 없음 안내', await pg.textContent('#surf-read'));
+    var dr = await Promise.all([pg.waitForEvent('download'), pg.click('#btn-save')]);
+    var rfile = path.join(tmp, 'rbf.json'); await dr[0].saveAs(rfile);
+    ok(JSON.parse(fs.readFileSync(rfile, 'utf8')).modelType === 'rbf' && /^RBFNN모델_/.test(dr[0].suggestedFilename()), 'RBFNN 모델 JSON');
+    var rtop = await pg.textContent('#opt-top tbody tr:first-child');
+    await pg.check('input[name=mtype][value=gp]');
+    ok(await count(pg, '#models tbody tr') === 45, 'GP 로 돌아오면 GP 결과가 되살아난다');
+    await pg.goto(base);
+    await pg.setInputFiles('#model-file', rfile);
+    await pg.waitForSelector('#s-opt:not([hidden])', { timeout: 5000 });
+    ok(/RBFNN/.test(await pg.textContent('#chosen')) && await pg.isChecked('input[name=mtype][value=rbf]'), 'RBFNN 모델 불러오기 → 왼쪽 메뉴도 RBFNN');
+    await pg.fill('#g-step-0', '10');
+    await pg.click('#btn-opt');
+    await pg.waitForSelector('#opt-top tbody tr');
+    ok(await pg.textContent('#opt-top tbody tr:first-child') === rtop, '불러온 RBFNN 의 최적 조건이 저장 전과 같다');
     // 글자·빈 칸 행은 빼고 사유를 보여 준다
     var csv = path.join(tmp, 'bad.csv');
     fs.writeFileSync(csv, 'Run,A,B,Y\n1,1,2,3\n2,2,,5\n3,x,1,2\n4,3,1,4\n5,4,2,6\n6,5,3,7\n');
@@ -78,6 +132,7 @@ srv.listen(0, async function () {
     await pg.goto(base); await pg.click('#btn-sample'); await pg.waitForSelector('#parity circle');
     var over = await pg.evaluate(function () { return document.documentElement.scrollWidth - document.documentElement.clientWidth; });
     ok(over <= 0, '360px 에서 가로 넘침 없음', over);
+    ok(await pg.evaluate(function () { var c = document.getElementById('surf-canvas').getBoundingClientRect(); return c.width > 250 && c.right <= document.documentElement.clientWidth; }), '360px 에서 곡면이 화면 안');
     await pg.goto(base + 'guide.html');
     ok(/하이퍼파라미터/.test(await pg.textContent('main')), '사용법 페이지');
   } catch (e) { failed++; console.log('  X 예외: ' + e.message); }

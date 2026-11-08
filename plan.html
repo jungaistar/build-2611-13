@@ -26,23 +26,23 @@ h3{font-size:15px;margin:16px 0 6px;} main ul{margin:0 0 10px 20px;}
   </div>
 </nav>
 <header class="hero"><div class="wrap">
-  <div class="eyebrow">생성형 AI 업무자동화 전문가과정 · 2차수 · 프로젝트 13 · 기획서 v1.0</div>
+  <div class="eyebrow">생성형 AI 업무자동화 전문가과정 · 2차수 · 프로젝트 13 · 기획서 v1.1</div>
   <h1>머신러닝 기반 최적화 툴 기획서</h1>
-  <p>실험·해석 데이터로 가우시안 프로세스 회귀(GPR) 모델을 하이퍼파라미터 조합마다 만들어 검증 R²로 비교·선정하고, 고른 모델로 Grid Search 를 돌려 최적 설계조건과 예측 불확실성을 보여 주는 브라우저 도구입니다.</p>
+  <p>실험·해석 데이터로 GP(가우시안 프로세스 회귀) 또는 RBFNN(방사 기저 함수 신경망) 모델을 하이퍼파라미터 조합마다 만들어 검증 R²로 비교·선정하고, 고른 모델로 Grid Search 를 돌려 최적 설계조건을 찾고, 두 인자를 골라 3D 반응 곡면을 돌려 보는 브라우저 도구입니다.</p>
 </div></header>
 <main><div class="wrap">
 <div class="card">
   <h2 style="margin-top:0">기획서 내려받기</h2>
   <p class="sub">파이프라인 · 아키텍처 · 와이어프레임 · 개발일지가 들어간 워드 문서입니다. 버전마다 따로 남깁니다.</p>
-  <div class="tablewrap plan"><table><thead><tr><th>버전</th><th>날짜</th><th>바뀐 점</th><th>파일</th></tr></thead><tbody><tr><td><b>v1.0</b></td><td>2026-11-03</td><td>첫 판 — 데이터 입력·GPR 하이퍼파라미터 비교·평가 그래프·Grid Search·모델 저장·엑셀 내보내기 / 기획서 워드 판·파이프라인·아키텍처·와이어프레임 추가</td><td><a class="btn primary" href="docs/기획서/build-2611-13_원광재_머신러닝기반최적화툴_기획서_v1.0.docx" download>워드 내려받기</a></td></tr></tbody></table></div>
+  <div class="tablewrap plan"><table><thead><tr><th>버전</th><th>날짜</th><th>바뀐 점</th><th>파일</th></tr></thead><tbody><tr><td><b>v1.1</b></td><td>2026-11-08</td><td>반응 곡선 → 반응 곡면 — 두 인자를 X·Y, 예측을 Z·색으로 그린 3D 곡면(마우스로 돌리기, 나머지 인자는 막대+숫자 칸 고정, 올리면 값과 GP ±1σ) / RBFNN 모델 추가 — 왼쪽 메뉴에서 GP / RBFNN 선택, 하이퍼파라미터(중심 수 k·폭 σ·규제 λ) 격자 비교·예측-실측·최적화·곡면·저장 모두 동작, σ 는 GP 전용 / 모델 JSON 맨 앞에 _사용법 — 입력 이름·순서·단위(학습 범위), 계산 순서, JavaScript·Python 예시와 예시 입력 → 결과 / Case 열을 Run 이름 열로 인식, 사이트 주소 build-2611-13.jobability.co.kr 로 정리</td><td><a class="btn primary" href="docs/기획서/build-2611-13_원광재_머신러닝기반최적화툴_기획서_v1.1.docx" download>워드 내려받기</a></td></tr><tr><td><b>v1.0</b></td><td>2026-11-03</td><td>첫 판 — 데이터 입력·GPR 하이퍼파라미터 비교·평가 그래프·Grid Search·모델 저장·엑셀 내보내기 / 기획서 워드 판·파이프라인·아키텍처·와이어프레임 추가</td><td><a class="btn primary" href="docs/기획서/build-2611-13_원광재_머신러닝기반최적화툴_기획서_v1.0.docx" download>워드 내려받기</a></td></tr></tbody></table></div>
 </div>
 <div class="card plan">
   <h2 style="margin-top:0">요구사항과 구현</h2>
   <div class="tablewrap"><table><thead><tr><th>기획서 요구</th><th>구현</th></tr></thead><tbody><tr><td>설계인자·결과 직접 입력, 데이터 테이블(행 Run · 열 인자·결과)</td><td>편집 표(행·열 추가, 엑셀 붙여넣기) + Run 열·목표·설계인자 고르기</td></tr><tr><td>CSV 파일 불러오기</td><td>CSV(UTF-8·CP949)·엑셀 첫 시트, 숫자 아닌 칸·빈 칸 행은 사유와 함께 제외</td></tr><tr><td>학습/검증 비율 조절</td><td>비율 50~95% + 시드 — 같은 시드면 같은 분할</td></tr><tr><td>하이퍼파라미터 3종 탐색 범위</td><td>길이 척도·신호 크기·노이즈 각각 최소·최대·개수(로그 간격) → 모든 조합 학습</td></tr><tr><td>모델별 R² · 최적 모델 선정</td><td>모델 목록, 검증 R² 최대 자동 선정(동률이면 로그 주변우도), 다른 행 직접 선택</td></tr><tr><td>예측값-실측값 · 잔차 · 파레토 · 성능 비교 그래프</td><td>산점도(학습/검증 + y=x) · 잔차 · 설계인자 영향도 파레토 · 하이퍼파라미터별 R²</td></tr><tr><td>Grid Search 최적 설계조건 · 예측 결과 그래프</td><td>인자별 최소·최대·간격, 조합 수 먼저 표시, 상위 10개 + 예측 평균·표준편차, 반응 곡선(±1σ)</td></tr><tr><td>학습 모델 저장·불러오기</td><td>JSON(표준화 계수·하이퍼파라미터·학습 데이터) — 불러오면 같은 예측</td></tr></tbody></table></div>
 </div>
 <div class="card plan-figs"><h2 style="margin-top:0">그림으로 보기</h2><figure><img src="docs/img/pipeline.png" alt="처리 흐름(파이프라인)" loading="lazy"><figcaption>처리 흐름(파이프라인)</figcaption></figure><figure><img src="docs/img/architecture.png" alt="구성(아키텍처)" loading="lazy"><figcaption>구성(아키텍처)</figcaption></figure><figure><img src="docs/img/wireframe-1.png" alt="와이어프레임 — 데이터 · 학습 · 모델 비교 화면" loading="lazy"><figcaption>와이어프레임 — 데이터 · 학습 · 모델 비교 화면</figcaption></figure><figure><img src="docs/img/wireframe-2.png" alt="와이어프레임 — 최적 조건 탐색 화면" loading="lazy"><figcaption>와이어프레임 — 최적 조건 탐색 화면</figcaption></figure><figure><img src="docs/img/screen.png" alt="실제 화면(예제 데이터)" loading="lazy"><figcaption>실제 화면(예제 데이터)</figcaption></figure></div>
-<div class="card"><h2 style="margin-top:0">개발일지</h2><h3>2026-11-03 · 첫 판</h3><ul><li>패들릿 원광재 기획(머신러닝 기반 최적화 툴)을 작업 지시서(CLAUDE.md)로 옮기고 구현</li><li>계산 엔진 gpr.js — 읽기·제외 사유, 분할·표준화, GPR, 지표, 하이퍼파라미터 탐색, 영향도, Grid Search, 저장</li><li>화면 — 편집 표·모델 목록·SVG 그래프 6종·최적 조건·반응 곡선·JSON·엑셀</li><li>계산 테스트 84 · 화면 테스트 25 통과</li></ul></div>
+<div class="card"><h2 style="margin-top:0">개발일지</h2><h3>2026-11-08 · v1.1 — 반응 곡면 · RBFNN · 모델 사용법</h3><ul><li>기획자 요청 3건(11-07) 반영 — 반응 곡면, 모델 파일 사용법, RBFNN</li><li>엔진 gpr.js — kmeans · rbfFit · train(종류별) · surfaceGrid · project · colormap · 사용법(usageOf), 저장 형식 version 2(v1.0 파일도 읽음)</li><li>화면 — 왼쪽 메뉴(모델 종류·두 모델 R²), 하이퍼파라미터 표가 종류에 따라 바뀜, 반응 곡면 캔버스(build-2611-04 의 정사영 방식)</li><li>기획자 실데이터(4인자 39 Run)로 로컬 확인 — 검증 R² GP 0.990 · RBFNN 0.984, 곡면 그림 확인. 실데이터는 저장소에 넣지 않음</li><li>계산 테스트 144 · 화면 테스트 45 통과, 새 테스트는 v1.0 엔진·일부러 깨뜨린 엔진에서 실패 확인</li></ul><h3>2026-11-03 · 첫 판</h3><ul><li>패들릿 원광재 기획(머신러닝 기반 최적화 툴)을 작업 지시서(CLAUDE.md)로 옮기고 구현</li><li>계산 엔진 gpr.js — 읽기·제외 사유, 분할·표준화, GPR, 지표, 하이퍼파라미터 탐색, 영향도, Grid Search, 저장</li><li>화면 — 편집 표·모델 목록·SVG 그래프 6종·최적 조건·반응 곡선·JSON·엑셀</li><li>계산 테스트 84 · 화면 테스트 25 통과</li></ul></div>
 </div></main>
-<footer><div class="wrap">생성형 AI 업무자동화 전문가과정 · 2차수 · 프로젝트 13 · 기획 원광재 · <a href="https://build-2611-00.jobability.co.kr/">2차수 프로젝트 총괄</a></div></footer>
+<footer><div class="wrap">생성형 AI 업무자동화 전문가과정 · 2차수 · 프로젝트 13 · 기획 원광재 · <a href="https://aebonlee.github.io/build-2611-00/">2차수 프로젝트 총괄</a></div></footer>
 </body>
 </html>

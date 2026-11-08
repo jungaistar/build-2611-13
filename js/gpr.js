@@ -1,4 +1,4 @@
-/* 머신러닝(GPR) 기반 최적화 툴 — 계산 엔진
+/* 머신러닝(GPR · RBFNN) 기반 최적화 툴 — 계산 엔진
  *
  * 화면(app.js)은 계산·판정하지 않는다. 읽기·학습·평가·선정·탐색은 전부 여기서 하고
  * test/logic.test.js 로 고정한다. 브라우저와 node 양쪽에서 읽힌다(전역 GPR).
@@ -10,6 +10,13 @@
  *   ℓ = 1 이면 "입력이 표준편차 하나만큼 떨어지면 상관이 크게 줄어든다"는 뜻이다.
  *
  * 예측 표준편차는 잠재 함수 f 의 불확실성(노이즈 제외)이다.
+ *
+ * (v1.1) 모델: RBFNN(방사 기저 함수 신경망)
+ *   같은 표준화 공간에서 중심 k 개(학습점 k-평균, k ≥ 학습 수면 학습점 전부)를 두고
+ *   은닉층 φ_j(x) = exp(-|x-c_j|² / (2σ²)), 출력 = w₀ + Σ w_j φ_j(x).
+ *   출력 가중치는 릿지 회귀 (ΦᵀΦ + λD) w = Φᵀy 로 푼다(D 는 절편을 뺀 단위 대각).
+ *   하이퍼파라미터 3종(중심 수 k · 폭 σ · 규제 λ)을 GP 와 같은 방식(격자 → 검증 R²)으로 고른다.
+ *   RBFNN 은 예측 표준편차를 내지 않는다 — σ 는 GP 전용이다.
  */
 (function (root) {
   'use strict';
@@ -70,7 +77,7 @@
   }
 
   /* ---------- 열 고르기 · 데이터 정리 ---------- */
-  var RUN_NAME = /^(run|runs|no\.?|#|번호|순번|실험\s*번호|run\s*no\.?)$/i;
+  var RUN_NAME = /^(run|runs|case|cases|no\.?|#|번호|순번|케이스|실험\s*번호|run\s*no\.?)$/i;
   function columnsOf(rows) {
     var h = [];
     rows.forEach(function (r) { Object.keys(r).forEach(function (k) { if (h.indexOf(k) < 0) h.push(k); }); });
@@ -218,15 +225,85 @@
     var h = { ell: +hyper.ell, sf: +hyper.sf, sn: +hyper.sn };
     if (!(h.ell > 0 && h.sf > 0 && h.sn >= 0)) throw new Error('하이퍼파라미터는 양수여야 합니다');
     var c = core(Xs, ys, h);
-    return { hyper: h, scaler: sc, X: X.map(function (x) { return x.slice(); }), y: y.slice(), Xs: Xs, L: c.L, alpha: c.alpha, jitter: c.jitter, logML: c.logML };
+    return { type: 'gp', hyper: h, scaler: sc, X: X.map(function (x) { return x.slice(); }), y: y.slice(), Xs: Xs, L: c.L, alpha: c.alpha, jitter: c.jitter, logML: c.logML };
   }
+
+  /* ---------- RBFNN ---------- */
+  // k-평균(시드 고정 k-means++ 시작). 같은 데이터면 같은 중심 — 저장·불러오기·테스트가 흔들리지 않게.
+  function kmeans(Z, k, seed) {
+    var n = Z.length, r = rng(seed == null ? 2611 : seed), C = [Z[Math.floor(r() * n)].slice()];
+    while (C.length < k) {
+      var d2 = Z.map(function (z) { var b = Infinity; C.forEach(function (c) { var v = sqdist(z, c); if (v < b) b = v; }); return b; });
+      var tot = d2.reduce(function (a, v) { return a + v; }, 0);
+      if (!(tot > 0)) break;                               // 남은 점이 전부 중심과 같다
+      var u = r() * tot, i = 0;
+      while (i < n - 1 && (u -= d2[i]) > 0) i++;
+      C.push(Z[i].slice());
+    }
+    var asg = Z.map(function () { return -1; });
+    for (var it = 0; it < 100; it++) {
+      var moved = false;
+      Z.forEach(function (z, i) {
+        var b = 0, bd = Infinity;
+        C.forEach(function (c, j) { var v = sqdist(z, c); if (v < bd) { bd = v; b = j; } });
+        if (asg[i] !== b) { asg[i] = b; moved = true; }
+      });
+      if (!moved) break;
+      C = C.map(function (c, j) {
+        var s = c.map(function () { return 0; }), m = 0;
+        Z.forEach(function (z, i) { if (asg[i] === j) { m++; z.forEach(function (v, q) { s[q] += v; }); } });
+        return m ? s.map(function (v) { return v / m; }) : c;   // 빈 무리는 자리를 지킨다
+      });
+    }
+    return C;
+  }
+  function rbfPhi(z, centers, width) {
+    var out = new Float64Array(centers.length + 1), w2 = 2 * width * width;
+    out[0] = 1;
+    for (var j = 0; j < centers.length; j++) out[j + 1] = Math.exp(-sqdist(z, centers[j]) / w2);
+    return out;
+  }
+  // hyper = { k, width, lambda } (표준화 단위). 출력 가중치는 릿지 회귀, 절편은 규제하지 않는다.
+  function rbfFit(X, y, hyper, scaler) {
+    if (!X.length) throw new Error('학습 데이터가 없습니다');
+    var sc = scaler || scalerOf(X, y);
+    var Xs = X.map(function (x) { return sx(sc, x); });
+    var ys = y.map(function (v) { return (v - sc.ym) / sc.ys; });
+    var h = { k: Math.round(+hyper.k), width: +hyper.width, lambda: +hyper.lambda };
+    if (!(h.k >= 1 && h.width > 0 && h.lambda >= 0)) throw new Error('중심 수는 1 이상, 폭은 양수, 규제는 0 이상이어야 합니다');
+    var n = Xs.length, kEff = Math.min(h.k, n);
+    var centers = kEff >= n ? Xs.map(function (z) { return z.slice(); }) : kmeans(Xs, kEff, 2611);
+    var p = centers.length + 1, A = [], b = new Float64Array(p);
+    for (var a = 0; a < p; a++) A.push(new Array(p).fill(0));
+    Xs.forEach(function (z, i) {
+      var f = rbfPhi(z, centers, h.width);
+      for (var q = 0; q < p; q++) { b[q] += f[q] * ys[i]; for (var t = 0; t <= q; t++) A[q][t] += f[q] * f[t]; }
+    });
+    for (a = 0; a < p; a++) { for (var t2 = 0; t2 < a; t2++) A[t2][a] = A[a][t2]; if (a > 0) A[a][a] += h.lambda; }
+    var c = cholJitter(A);
+    var w = solveLT(c.L, solveL(c.L, b));
+    return { type: 'rbf', hyper: h, scaler: sc, X: X.map(function (x) { return x.slice(); }), y: y.slice(), Xs: Xs, centers: centers, w: w, kEff: centers.length, jitter: c.jitter };
+  }
+  function rbfMean(m, x) {
+    var f = rbfPhi(sx(m.scaler, x), m.centers, m.hyper.width), s = 0;
+    for (var j = 0; j < f.length; j++) s += f[j] * m.w[j];
+    return s * m.scaler.ys + m.scaler.ym;
+  }
+  // 모델 종류에 따라 학습한다. type: 'gp' | 'rbf'
+  function train(type, X, y, hyper, scaler) { return type === 'rbf' ? rbfFit(X, y, hyper, scaler) : fit(X, y, hyper, scaler); }
   function predictMean(m, x) {
+    if (m.type === 'rbf') return rbfMean(m, x);
     var z = sx(m.scaler, x), s = 0;
     for (var i = 0; i < m.Xs.length; i++) s += kern(z, m.Xs[i], m.hyper) * m.alpha[i];
     return s * m.scaler.ys + m.scaler.ym;
   }
+  // 예측 평균과 표준편차. RBFNN 은 표준편차가 없다(sd 칸이 null).
   function predict(m, Xnew) {
     var mean = [], sd = [];
+    if (m.type === 'rbf') {
+      Xnew.forEach(function (x) { mean.push(rbfMean(m, x)); sd.push(null); });
+      return { mean: mean, sd: sd };
+    }
     Xnew.forEach(function (x) {
       var z = sx(m.scaler, x), n = m.Xs.length, ks = new Float64Array(n), s = 0;
       for (var i = 0; i < n; i++) { ks[i] = kern(z, m.Xs[i], m.hyper); s += ks[i] * m.alpha[i]; }
@@ -263,27 +340,56 @@
     { key: 'sf', name: '신호 크기 σf', def: { min: 0.5, max: 2, n: 3 } },
     { key: 'sn', name: '노이즈 σn', def: { min: 0.01, max: 0.3, n: 3 } }
   ];
-  function hyperGrid(rg) {
-    var a = logspace(rg.ell.min, rg.ell.max, rg.ell.n), b = logspace(rg.sf.min, rg.sf.max, rg.sf.n), c = logspace(rg.sn.min, rg.sn.max, rg.sn.n), out = [];
-    a.forEach(function (ell) { b.forEach(function (sf) { c.forEach(function (sn) { out.push({ ell: ell, sf: sf, sn: sn }); }); }); });
+  // RBFNN — 중심 수는 정수(최소~최대를 고르게 나눠 반올림), 폭·규제는 로그 간격
+  var HYPER_RBF = [
+    { key: 'k', name: '중심 수 k', int: true, def: { min: 4, max: 30, n: 4 } },
+    { key: 'width', name: '폭 σ', def: { min: 0.3, max: 3, n: 5 } },
+    { key: 'lambda', name: '규제 λ', def: { min: 1e-6, max: 0.1, n: 3 } }
+  ];
+  var MODELS = {
+    gp: { key: 'gp', short: 'GP', name: 'GP 모델(가우시안 프로세스 회귀)', hasSd: true, hyper: HYPER, tieName: '로그 주변우도' },
+    rbf: { key: 'rbf', short: 'RBFNN', name: 'RBFNN 모델(방사 기저 함수 신경망)', hasSd: false, hyper: HYPER_RBF, tieName: '실제 중심 수' }
+  };
+  function modelOf(type) { return MODELS[type] || MODELS.gp; }
+  function linInts(lo, hi, n) {
+    lo = Math.round(+lo); hi = Math.round(+hi); n = Math.max(1, Math.round(+n));
+    if (!(lo >= 1 && hi >= 1)) return [];
+    if (hi < lo) { var t = lo; lo = hi; hi = t; }
+    var out = [];
+    for (var i = 0; i < n; i++) { var v = Math.round(n === 1 ? lo : lo + (hi - lo) * i / (n - 1)); if (out.indexOf(v) < 0) out.push(v); }
+    return out;
+  }
+  function hyperValues(h, r) { return h.int ? linInts(r.min, r.max, r.n) : logspace(r.min, r.max, r.n); }
+  // 모든 조합. GP 는 ℓ → σf → σn 순으로 겹친다(v1.0 과 같은 순서 · 같은 id).
+  function hyperGrid(rg, type) {
+    var hs = modelOf(type).hyper, out = [{}];
+    hs.forEach(function (h) {
+      var vals = rg[h.key] ? hyperValues(h, rg[h.key]) : [], nx = [];
+      out.forEach(function (o) { vals.forEach(function (v) { var c = {}; Object.keys(o).forEach(function (k) { c[k] = o[k]; }); c[h.key] = v; nx.push(c); }); });
+      out = nx;
+    });
     return out;
   }
   function pick(arr, idx) { return idx.map(function (i) { return arr[i]; }); }
   // 검증 R² 큰 순, 같으면 로그 주변우도 큰 순. 정의 안 된 R² 는 맨 뒤.
+  // RBFNN(로그우도 없음)은 동률이면 실제 중심 수가 적은 쪽, 그다음 규제 λ 가 큰 쪽 — 더 단순한 모델.
   function rank(a, b) {
     var ra = a.test.r2 == null ? -Infinity : a.test.r2, rb = b.test.r2 == null ? -Infinity : b.test.r2;
     if (Math.abs(ra - rb) > 1e-9) return rb - ra;
-    return b.logML - a.logML;
+    if (a.logML != null && b.logML != null) return b.logML - a.logML;
+    var ka = a.kEff == null ? Infinity : a.kEff, kb = b.kEff == null ? Infinity : b.kEff;
+    if (ka !== kb) return ka - kb;
+    return (b.hyper.lambda || 0) - (a.hyper.lambda || 0);
   }
-  function searchHyper(X, y, sp, rg) {
+  function searchHyper(X, y, sp, rg, type) {
     var Xtr = pick(X, sp.train), ytr = pick(y, sp.train), Xte = pick(X, sp.test), yte = pick(y, sp.test);
-    var res = [];
-    hyperGrid(rg).forEach(function (h, i) {
+    var res = [], rbf = type === 'rbf';
+    hyperGrid(rg, type).forEach(function (h, i) {
       try {
-        var m = fit(Xtr, ytr, h);
+        var m = train(type, Xtr, ytr, h);
         var ptr = predict(m, Xtr).mean, pte = predict(m, Xte).mean;
-        res.push({ id: i, hyper: m.hyper, train: metrics(ytr, ptr), test: metrics(yte, pte), logML: m.logML, jitter: m.jitter });
-      } catch (e) { res.push({ id: i, hyper: h, train: metrics([], []), test: { r2: null }, logML: -Infinity, error: e.message }); }
+        res.push({ id: i, type: m.type, hyper: m.hyper, train: metrics(ytr, ptr), test: metrics(yte, pte), logML: rbf ? null : m.logML, kEff: rbf ? m.kEff : null, jitter: m.jitter });
+      } catch (e) { res.push({ id: i, type: rbf ? 'rbf' : 'gp', hyper: h, train: metrics([], []), test: { r2: null }, logML: rbf ? null : -Infinity, kEff: null, error: e.message }); }
     });
     res.sort(rank);
     res.forEach(function (r, k) { r.rank = k + 1; });
@@ -301,18 +407,18 @@
     });
   }
   // 고른 하이퍼파라미터로 학습 모델(평가용) · 학습+검증 전체 모델(최적화·저장용)을 만든다.
-  function evaluate(X, y, sp, hyper) {
-    var mTr = fit(pick(X, sp.train), pick(y, sp.train), hyper);
+  function evaluate(X, y, sp, hyper, type) {
+    var mTr = train(type, pick(X, sp.train), pick(y, sp.train), hyper);
     var p = predict(mTr, X);
     var rows = X.map(function (x, i) {
       return { i: i, set: sp.test.indexOf(i) >= 0 ? 'test' : 'train', actual: y[i], pred: p.mean[i], sd: p.sd[i], resid: y[i] - p.mean[i] };
     });
     var tr = rows.filter(function (r) { return r.set === 'train'; }), te = rows.filter(function (r) { return r.set === 'test'; });
     return {
-      model: mTr, rows: rows,
+      type: mTr.type, model: mTr, rows: rows,
       train: metrics(tr.map(function (r) { return r.actual; }), tr.map(function (r) { return r.pred; })),
       test: metrics(te.map(function (r) { return r.actual; }), te.map(function (r) { return r.pred; })),
-      final: fit(X, y, hyper)
+      final: train(type, X, y, hyper)
     };
   }
 
@@ -323,7 +429,8 @@
     if (ev.test.r2 == null) w.push('검증 Run 의 실측이 모두 같아 검증 R² 를 계산할 수 없습니다. 시드나 비율을 바꿔 보세요.');
     else {
       if (ev.test.r2 < WARN_R2) w.push('검증 R² 가 ' + WARN_R2 + ' 보다 낮습니다. 최적 조건을 믿기 전에 Run 을 늘리거나 탐색 범위를 넓혀 보세요.');
-      if (ev.train.r2 != null && ev.train.r2 - ev.test.r2 > WARN_GAP) w.push('학습 R² 와 검증 R² 차이가 ' + WARN_GAP + ' 보다 큽니다(과적합 가능). 노이즈 σn 을 키우거나 길이 척도 ℓ 를 늘려 보세요.');
+      if (ev.train.r2 != null && ev.train.r2 - ev.test.r2 > WARN_GAP) w.push('학습 R² 와 검증 R² 차이가 ' + WARN_GAP + ' 보다 큽니다(과적합 가능). ' +
+        (ev.type === 'rbf' ? '규제 λ 를 키우거나 중심 수 k 를 줄여 보세요.' : '노이즈 σn 을 키우거나 길이 척도 ℓ 를 늘려 보세요.'));
     }
     return w;
   }
@@ -357,6 +464,45 @@
     var xs = sweep(lo, hi, n || 41), X = xs.map(function (v) { var x = base.slice(); x[j] = v; return x; });
     var p = predict(m, X);
     return { x: xs, mean: p.mean, sd: p.sd };
+  }
+
+  /* ---------- (v1.1) 반응 곡면 ---------- */
+  // 인자 ix 를 가로(x), iy 를 세로(y)로 n×n 점에서 예측. 나머지 인자는 base 값에 고정.
+  // mean[j][i] 는 (xs[i], ys[j]) 의 예측 평균, sd 는 GP 만(RBFNN 은 null).
+  function surfaceGrid(m, base, ix, iy, rx, ry, n) {
+    n = Math.max(2, Math.round(n || 25));
+    if (ix === iy) throw new Error('가로축과 세로축은 서로 다른 인자여야 합니다');
+    var xs = sweep(+rx.min, +rx.max, n), ys = sweep(+ry.min, +ry.max, n), pts = [];
+    ys.forEach(function (yv) { xs.forEach(function (xv) { var x = base.slice(); x[ix] = xv; x[iy] = yv; pts.push(x); }); });
+    var p = predict(m, pts), mean = [], sd = [], lo = Infinity, hi = -Infinity, has = m.type !== 'rbf';
+    for (var j = 0; j < n; j++) {
+      mean.push(p.mean.slice(j * n, (j + 1) * n));
+      sd.push(has ? p.sd.slice(j * n, (j + 1) * n) : null);
+      mean[j].forEach(function (v) { if (v < lo) lo = v; if (v > hi) hi = v; });
+    }
+    return { xs: xs, ys: ys, mean: mean, sd: has ? sd : null, hasSd: has, zmin: lo, zmax: hi, ix: ix, iy: iy, base: base.slice() };
+  }
+  // 정사영(build-2611-04 와 같은 식). 세계 좌표는 z 가 위. yaw = 위 축으로 돌리기, pitch = 앞으로 숙이기. depth 가 클수록 멀다.
+  function project(p, view) {
+    var cy = Math.cos(view.yaw || 0), sy = Math.sin(view.yaw || 0), cp = Math.cos(view.pitch || 0), sp = Math.sin(view.pitch || 0);
+    var x1 = p[0] * cy - p[1] * sy, y1 = p[0] * sy + p[1] * cy, z1 = p[2];
+    var y2 = y1 * cp + z1 * sp, z2 = -y1 * sp + z1 * cp, s = view.zoom || 1;
+    return { x: x1 * s, y: z2 * s, depth: y2 };
+  }
+  var VIRIDIS = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
+  function colormap(v) {
+    if (!isFinite(v)) return [200, 200, 200];
+    v = Math.max(0, Math.min(1, v));
+    var f = v * (VIRIDIS.length - 1), i = Math.min(VIRIDIS.length - 2, Math.floor(f)), r = f - i;
+    return [0, 1, 2].map(function (k) { return Math.round(VIRIDIS[i][k] + (VIRIDIS[i + 1][k] - VIRIDIS[i][k]) * r); });
+  }
+  function pointInPoly(px, py, pts) {
+    var inside = false;
+    for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      var xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+      if (((yi > py) !== (yj > py)) && (px < (xj - xi) * (py - yi) / ((yj - yi) || 1e-12) + xi)) inside = !inside;
+    }
+    return inside;
   }
 
   /* ---------- Grid Search ---------- */
@@ -423,24 +569,129 @@
 
   /* ---------- 모델 저장 · 불러오기 ---------- */
   var FORMAT = 'gpr-optimizer-model';
-  function toJSON(m, meta) {
-    meta = meta || {};
+  // (v1.1) 파일 맨 앞 「_사용법」 — 다른 프로그램에서 이 파일만으로 예측하는 방법. JSON 에는 주석이 없어 칸으로 적는다.
+  var SNIPPET = {
+    gp: {
+      js: [
+        '// m = JSON.parse(이 파일 내용), x = 입력 순서대로 원래 단위 값',
+        'function predict(m, x) {',
+        '  const s = m.scaler, h = m.hyper;',
+        '  const z = x.map((v, j) => (v - s.xm[j]) / s.xs[j]);',
+        '  let f = 0;',
+        '  m.X.forEach((row, i) => {',
+        '    let d2 = 0;',
+        '    row.forEach((v, j) => { const d = z[j] - (v - s.xm[j]) / s.xs[j]; d2 += d * d; });',
+        '    f += h.sf * h.sf * Math.exp(-d2 / (2 * h.ell * h.ell)) * m.alpha[i];',
+        '  });',
+        '  return f * s.ys + s.ym;',
+        '}'
+      ],
+      py: [
+        'import json, math',
+        "m = json.load(open('모델파일.json', encoding='utf-8'))",
+        'def predict(x):  # x = 입력 순서대로 원래 단위 값',
+        "    s, h = m['scaler'], m['hyper']",
+        "    z = [(v - s['xm'][j]) / s['xs'][j] for j, v in enumerate(x)]",
+        '    f = 0.0',
+        "    for row, a in zip(m['X'], m['alpha']):",
+        "        d2 = sum((z[j] - (v - s['xm'][j]) / s['xs'][j]) ** 2 for j, v in enumerate(row))",
+        "        f += h['sf'] ** 2 * math.exp(-d2 / (2 * h['ell'] ** 2)) * a",
+        "    return f * s['ys'] + s['ym']"
+      ],
+      steps: [
+        '1) 입력을 표준화: z_j = (x_j - scaler.xm[j]) / scaler.xs[j]',
+        '2) 학습 Run 마다 X[i] 도 같은 식으로 표준화해 z 와의 거리 제곱 d² 를 구한다',
+        '3) k_i = hyper.sf² · exp(-d² / (2 · hyper.ell²))',
+        '4) f = Σ k_i · alpha[i]  (alpha 는 표준화 단위)',
+        '5) 결과 = f · scaler.ys + scaler.ym  (원래 단위)'
+      ],
+      sd: '예측 표준편차(σ)는 위 짧은 코드로는 계산하지 않습니다. 이 도구의 「저장한 모델 불러오기」로 열면 함께 나옵니다.'
+    },
+    rbf: {
+      js: [
+        '// m = JSON.parse(이 파일 내용), x = 입력 순서대로 원래 단위 값',
+        'function predict(m, x) {',
+        '  const s = m.scaler, w = m.weights;',
+        '  const z = x.map((v, j) => (v - s.xm[j]) / s.xs[j]);',
+        '  let f = w[0];',
+        '  m.centers.forEach((c, k) => {',
+        '    let d2 = 0;',
+        '    c.forEach((v, j) => { const d = z[j] - v; d2 += d * d; });',
+        '    f += w[k + 1] * Math.exp(-d2 / (2 * m.hyper.width * m.hyper.width));',
+        '  });',
+        '  return f * s.ys + s.ym;',
+        '}'
+      ],
+      py: [
+        'import json, math',
+        "m = json.load(open('모델파일.json', encoding='utf-8'))",
+        'def predict(x):  # x = 입력 순서대로 원래 단위 값',
+        "    s, w, width = m['scaler'], m['weights'], m['hyper']['width']",
+        "    z = [(v - s['xm'][j]) / s['xs'][j] for j, v in enumerate(x)]",
+        '    f = w[0]',
+        "    for k, c in enumerate(m['centers']):",
+        '        d2 = sum((z[j] - v) ** 2 for j, v in enumerate(c))',
+        '        f += w[k + 1] * math.exp(-d2 / (2 * width ** 2))',
+        "    return f * s['ys'] + s['ym']"
+      ],
+      steps: [
+        '1) 입력을 표준화: z_j = (x_j - scaler.xm[j]) / scaler.xs[j]',
+        '2) 중심 centers[k] (이미 표준화 단위) 마다 거리 제곱 d² 를 구한다',
+        '3) φ_k = exp(-d² / (2 · hyper.width²))',
+        '4) f = weights[0] + Σ weights[k+1] · φ_k  (표준화 단위)',
+        '5) 결과 = f · scaler.ys + scaler.ym  (원래 단위)'
+      ],
+      sd: 'RBFNN 모델은 예측 표준편차(σ)를 내지 않습니다. 불확실성이 필요하면 GP 모델을 쓰세요.'
+    }
+  };
+  function usageOf(m, inputs, target) {
+    var type = m.type === 'rbf' ? 'rbf' : 'gp', sn = SNIPPET[type], bnd = ranges(m.X);
+    var ex = bnd.map(function (b) { return +b.mean.toPrecision(6); });
+    var exY = predictMean(m, ex);
     return {
-      format: FORMAT, version: 1, savedAt: meta.savedAt || new Date().toISOString(),
-      inputs: meta.inputs || [], target: meta.target || '', runs: meta.runs || [],
-      hyper: m.hyper, scaler: m.scaler, X: m.X, y: m.y, logML: m.logML,
-      metrics: meta.metrics || null, split: meta.split || null,
-      note: '하이퍼파라미터는 표준화 단위입니다. X·y 는 학습에 쓴 원래 단위 데이터입니다.'
+      설명: '「머신러닝 기반 최적화 툴」에서 저장한 ' + modelOf(type).name + ' 입니다. 이 도구의 「저장한 모델 불러오기」로 다시 열면 같은 예측을 냅니다. 다른 프로그램에서는 아래 순서대로 계산하면 됩니다.',
+      입력_순서: inputs.map(function (nm, j) { return (j + 1) + '. ' + nm + ' — 원래 단위 그대로(학습 데이터 범위 ' + +bnd[j].min.toPrecision(6) + ' ~ ' + +bnd[j].max.toPrecision(6) + ')'; }),
+      출력: (target || '결과값') + ' 의 예측 평균(원래 단위)',
+      계산_순서: sn.steps,
+      표준편차: sn.sd,
+      예시: { 입력: ex, 결과: +exY.toPrecision(10), 뜻: '입력에 학습 데이터 평균을 넣었을 때의 예측' },
+      JavaScript: sn.js,
+      Python: sn.py.concat(['print(predict(' + JSON.stringify(ex) + '))  # 약 ' + +exY.toPrecision(6)]),
+      주의: '학습 데이터 범위 밖 입력은 외삽이라 믿기 어렵습니다. 예측은 모델 추정이며 확인 실험이 필요합니다. 하이퍼파라미터·alpha·weights·centers 는 표준화 단위입니다.'
     };
   }
+  function toJSON(m, meta) {
+    meta = meta || {};
+    var type = m.type === 'rbf' ? 'rbf' : 'gp', inputs = meta.inputs || [];
+    var o = {
+      _사용법: usageOf(m, inputs, meta.target),
+      format: FORMAT, version: 2, modelType: type, savedAt: meta.savedAt || new Date().toISOString(),
+      inputs: inputs, target: meta.target || '', runs: meta.runs || [],
+      inputRanges: ranges(m.X).map(function (b) { return { min: b.min, max: b.max }; }),
+      hyper: m.hyper, scaler: m.scaler
+    };
+    if (type === 'gp') { o.alpha = Array.from(m.alpha); o.logML = m.logML; }
+    else { o.centers = m.centers.map(function (c) { return c.slice(); }); o.weights = Array.from(m.w); o.kEff = m.kEff; }
+    o.X = m.X; o.y = m.y;
+    o.metrics = meta.metrics || null; o.split = meta.split || null;
+    o.note = '하이퍼파라미터는 표준화 단위입니다. X·y 는 학습에 쓴 원래 단위 데이터입니다.';
+    return o;
+  }
+  // v1.0 파일(modelType 없음)은 GP 로 읽는다. RBFNN 은 저장된 중심·가중치를 그대로 쓴다(다시 학습하지 않음).
   function fromJSON(o) {
     if (typeof o === 'string') o = JSON.parse(o);
     if (!o || o.format !== FORMAT) throw new Error('이 도구에서 저장한 모델 파일이 아닙니다');
     if (!Array.isArray(o.X) || !Array.isArray(o.y) || o.X.length !== o.y.length || !o.X.length) throw new Error('학습 데이터가 비어 있거나 맞지 않습니다');
-    var d = o.X[0].length;
+    var d = o.X[0].length, type = o.modelType === 'rbf' ? 'rbf' : 'gp', m;
     if (o.inputs && o.inputs.length !== d) throw new Error('설계인자 수와 데이터 열 수가 다릅니다');
-    var m = fit(o.X, o.y, o.hyper, o.scaler);
-    return { model: m, inputs: o.inputs || [], target: o.target || '', runs: o.runs || [], metrics: o.metrics || null, split: o.split || null, savedAt: o.savedAt };
+    if (type === 'rbf') {
+      if (!Array.isArray(o.centers) || !Array.isArray(o.weights) || o.weights.length !== o.centers.length + 1 || o.centers.some(function (c) { return c.length !== d; }))
+        throw new Error('RBFNN 중심·가중치가 맞지 않습니다');
+      m = { type: 'rbf', hyper: { k: +o.hyper.k, width: +o.hyper.width, lambda: +o.hyper.lambda }, scaler: o.scaler, X: o.X.map(function (x) { return x.slice(); }), y: o.y.slice(),
+        centers: o.centers.map(function (c) { return c.slice(); }), w: Float64Array.from(o.weights), kEff: o.centers.length, jitter: 0 };
+      m.Xs = m.X.map(function (x) { return sx(m.scaler, x); });
+    } else m = fit(o.X, o.y, o.hyper, o.scaler);
+    return { type: type, model: m, inputs: o.inputs || [], target: o.target || '', runs: o.runs || [], metrics: o.metrics || null, split: o.split || null, savedAt: o.savedAt };
   }
 
   /* ---------- 엑셀 보고 (시트별 2차원 배열) ---------- */
@@ -455,18 +706,19 @@
     });
     (s.dropped || []).forEach(function (d) { data.push([d.run].concat(s.inputs.map(function () { return ''; }), ['', '제외 — ' + d.reason])); });
     out['데이터'] = data;
-    var cmp = [['순위', '길이 척도 ℓ', '신호 크기 σf', '노이즈 σn', '학습 R²', '검증 R²', '검증 RMSE', '검증 MAE', '로그 주변우도', '선택']];
+    var md = modelOf(s.modelType), hs = md.hyper;
+    var cmp = [['순위'].concat(hs.map(function (h) { return h.name; }), ['학습 R²', '검증 R²', '검증 RMSE', '검증 MAE', md.tieName, '선택'])];
     (s.results || []).forEach(function (r) {
-      cmp.push([r.rank, r.hyper.ell, r.hyper.sf, r.hyper.sn, r4(r.train.r2), r4(r.test.r2), r4(r.test.rmse), r4(r.test.mae), r4(r.logML), s.chosen === r.id ? '선택' : '']);
+      cmp.push([r.rank].concat(hs.map(function (h) { return r.hyper[h.key]; }), [r4(r.train.r2), r4(r.test.r2), r4(r.test.rmse), r4(r.test.mae), md.key === 'rbf' ? (r.kEff == null ? '' : r.kEff) : r4(r.logML), s.chosen === r.id ? '선택' : '']));
     });
     out['모델비교'] = cmp;
-    var ev = [['Run', '구분', '실측', '예측', '잔차(실측-예측)', '예측 표준편차']];
+    var ev = [['Run', '구분', '실측', '예측', '잔차(실측-예측)', md.hasSd ? '예측 표준편차' : '예측 표준편차(GP 전용 — RBFNN 은 없음)']];
     if (s.evaluation) s.evaluation.rows.forEach(function (r) { ev.push([s.runs[r.i], r.set === 'test' ? '검증' : '학습', r.actual, r4(r.pred), r4(r.resid), r4(r.sd)]); });
     out['검증예측'] = ev;
     var op = [];
     if (s.optimum && s.optimum.top.length) {
       var gl = { max: '최대화', min: '최소화', target: '목표값 ' + s.optimum.target }[s.optimum.goal];
-      op.push(['목표', s.target + ' ' + gl], ['탐색 조합 수', s.optimum.count], ['주의', '예측값은 모델 추정이며 확인 실험이 필요합니다.'], []);
+      op.push(['모델', md.name], ['목표', s.target + ' ' + gl], ['탐색 조합 수', s.optimum.count], ['주의', '예측값은 모델 추정이며 확인 실험이 필요합니다.' + (md.hasSd ? '' : ' RBFNN 은 예측 표준편차를 내지 않습니다.')], []);
       op.push(['순위'].concat(s.inputs, ['예측 평균', '예측 표준편차', '학습 데이터 범위 밖']));
       s.optimum.top.forEach(function (k) {
         op.push([k.rank].concat(k.x, [r4(k.mean), r4(k.sd), k.anyOutside ? s.inputs.filter(function (n, j) { return k.outside[j]; }).join(', ') : '']));
@@ -499,6 +751,8 @@
     rng: rng, parseNum: parseNum, parseCSV: parseCSV, columnsOf: columnsOf, guessColumns: guessColumns, prepare: prepare, ranges: ranges,
     split: split, cholesky: cholesky, solveL: solveL, solveLT: solveLT, cholJitter: cholJitter, core: core, kern: kern,
     scalerOf: scalerOf, fit: fit, predict: predict, predictMean: predictMean, metrics: metrics,
+    kmeans: kmeans, rbfFit: rbfFit, train: train, MODELS: MODELS, HYPER_RBF: HYPER_RBF, modelOf: modelOf, hyperValues: hyperValues, linInts: linInts,
+    surfaceGrid: surfaceGrid, project: project, colormap: colormap, pointInPoly: pointInPoly, usageOf: usageOf,
     logspace: logspace, HYPER: HYPER, hyperGrid: hyperGrid, searchHyper: searchHyper, rank: rank, hyperProfile: hyperProfile, evaluate: evaluate, diagnose: diagnose, bestObserved: bestObserved,
     pareto: pareto, response: response, axisValues: axisValues, gridCount: gridCount, gridSearch: gridSearch, defaultSpec: defaultSpec, niceStep: niceStep, GRID_LIMIT: GRID_LIMIT,
     toJSON: toJSON, fromJSON: fromJSON, reportSheets: reportSheets, sample: sample, truth: truth
