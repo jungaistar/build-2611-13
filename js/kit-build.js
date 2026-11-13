@@ -5,6 +5,12 @@
  * 정본: build-2611-00/tools/kit/kit-build.js — 과제 리포의 사본을 직접 고치지 말 것. */
 (function () {
   'use strict';
+  // 과제가 첫 진입 쪽을 따로 정했으면(plan.json landing.entry) 사이트 주소로 들어왔을 때 그 쪽으로 보낸다. 내 PC(시험)와 ?home=1 은 그대로 둔다
+  (function () {
+    var C0 = window.AUTH_CONFIG || {}, ent = C0.site && C0.site.landing && C0.site.landing.entry;
+    var local = location.protocol === 'file:' || /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname);
+    if (ent && !local && /(^|\/)(index\.html)?$/.test(location.pathname) && !/[?&]home=1/.test(location.search) && !location.hash) location.replace(ent + location.search);
+  })();
   var m = document.querySelector('main');
   if (m && !document.getElementById('main')) m.id = 'main';
   // 키트 스타일은 .side · .sidebar 를 왼쪽 메뉴로 보고 남색을 칠한다. 과제 본문 안에 같은 이름의 칸이 있으면 원래 색을 지킨다.
