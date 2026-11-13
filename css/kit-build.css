@@ -1,0 +1,8 @@
+/* build-2611 과제용 — 로그인 키트를 여러 쪽짜리 정적 화면에 맞춘다(정본 build-2611-00/tools/kit/kit-build.css) */
+[hidden]{display:none !important;}
+.kit-bar{display:none;}
+.kit-shell .kit-bar{display:flex; justify-content:flex-end; align-items:center; flex-wrap:wrap; gap:6px 10px; max-width:1320px; margin:0 auto; padding:6px 20px; min-height:0; font-size:13.5px; position:relative; z-index:5;}
+.kit-shell .kit-bar .auth-chip{margin-left:auto; flex-wrap:wrap; justify-content:flex-end; max-width:100%;}
+.kit-shell.kit-page-on header.hero{display:none;}
+#kitPage{max-width:1320px; margin:0 auto; padding:8px 20px 40px; min-width:0;}
+@media print{ .kit-bar{display:none !important;} }

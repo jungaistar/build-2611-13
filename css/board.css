@@ -1,0 +1,38 @@
+/* data10 게시판 · 새 글 알림 — 정본: data10-00/kit/auth/css/board.css */
+.kit-ext-n { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 5px; margin-left: 6px; border-radius: 9px; background: #d92d20; color: #fff; font-size: 11.5px; font-weight: 800; line-height: 1; }
+.kit-ext-n[hidden] { display: none; }
+.kit-nav .kit-ext-n { margin-left: auto; }
+.kb-tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 14px; }
+.kb-tools .kb-right { margin-left: auto; }
+.kb-danger { color: var(--ag-err); } .kb-danger:hover { border-color: var(--ag-err); }
+.kb-list { list-style: none; margin: 0; padding: 0; }
+.kb-list li + li { border-top: 1px solid #e8edf3; }
+.kb-list a { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 14px 10px; min-height: 48px; color: var(--ag-ink); text-decoration: none; border-radius: 10px; }
+.kb-list a:hover { background: #f4f7fb; }
+.kb-t { font-size: 16px; font-weight: 700; word-break: keep-all; overflow-wrap: anywhere; }
+.kb-m { margin-left: auto; font-size: 13.5px; color: var(--ag-sub); white-space: nowrap; }
+.kb-c { font-size: 12.5px; font-weight: 700; color: var(--ag-sub); }
+.kb-pin, .kb-new { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 12px; font-weight: 800; white-space: nowrap; }
+.kb-pin { background: color-mix(in srgb, var(--ag-brand) 14%, #fff); color: var(--ag-brand-d); margin-right: 6px; }
+.kb-new { background: #fdecea; color: #b3261e; }
+.kb-empty, .kb-dim { color: var(--ag-sub); font-size: 15px; margin: 6px 0; }
+.kb-err { margin: 0 0 12px; padding: 10px 12px; border-radius: 10px; background: var(--ag-err-bg); color: var(--ag-err); font-size: 14.5px; }
+.kb-post h2 { font-size: 20px; line-height: 1.4; margin-bottom: 6px; word-break: keep-all; overflow-wrap: anywhere; }
+.kb-meta { margin: 0 0 12px; font-size: 13.5px; color: var(--ag-sub); }
+.kb-body { font-size: 15.5px; line-height: 1.75; word-break: keep-all; overflow-wrap: anywhere; }
+.kb-coms { list-style: none; margin: 0 0 16px; padding: 0; display: grid; gap: 12px; }
+.kb-coms li { padding: 12px 14px; border-radius: 12px; background: #f6f8fb; }
+.kb-coms .kb-meta { margin-bottom: 4px; }
+.kb-link { font: inherit; font-size: 13px; border: 0; background: none; color: var(--ag-sub); text-decoration: underline; cursor: pointer; padding: 0 4px; }
+.kb-form textarea, .kb-cform textarea, .kb-form select { font: inherit; font-size: 16px; font-weight: 400; padding: 10px 12px; border: 1px solid var(--ag-line); border-radius: 9px; background: #fff; color: var(--ag-ink); width: 100%; box-sizing: border-box; }
+.kb-form textarea, .kb-cform textarea { resize: vertical; line-height: 1.65; }
+.kb-form textarea:focus, .kb-cform textarea:focus, .kb-form select:focus { outline: 2px solid var(--ag-brand); outline-offset: 1px; border-color: var(--ag-brand); }
+.kb-form .kb-chk { display: flex; align-items: center; gap: 8px; font-weight: 600; }
+.kb-form .kb-chk input { width: 18px; height: 18px; padding: 0; }
+.kb code, .kb-form code { padding: 1px 6px; border-radius: 6px; background: #eef2f6; font-size: .92em; }
+.kb-toast { position: fixed; right: 18px; bottom: 18px; z-index: 9000; display: flex; align-items: center; gap: 12px; max-width: min(360px, calc(100vw - 36px)); padding: 13px 16px; border: 0; border-radius: 14px; background: var(--ag-navy, #172334); color: #fff; font: inherit; text-align: left; cursor: pointer; box-shadow: 0 14px 34px rgba(15, 30, 55, .28); }
+.kb-toast span { display: grid; gap: 2px; min-width: 0; }
+.kb-toast b { font-size: 14.5px; }
+.kb-toast small { font-size: 13.5px; opacity: .85; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 639px) { .kb-m { margin-left: 0; width: 100%; } }
+@media print { .kb-toast, .kb-tools { display: none !important; } }
