@@ -149,15 +149,20 @@ window.AUTH_CONFIG = {
       ]
     },
     "landing": {
+      "company": {
+        "name": "HD건설기계",
+        "en": "HD CONSTRUCTION EQUIPMENT",
+        "logo": "images/logo.png",
+        "logoH": 24
+      },
       "slides": [
         {
-          "image": "images/slide-1.jpg"
+          "image": "images/slide-1.jpg",
+          "tone": "dark"
         },
         {
-          "image": "images/slide-2.jpg"
-        },
-        {
-          "image": "images/slide-3.jpg"
+          "image": "images/slide-2.jpg",
+          "tone": "dark"
         }
       ],
       "heroMode": "slide"
