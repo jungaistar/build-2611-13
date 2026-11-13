@@ -287,11 +287,12 @@
     var nav = '<header class="hp-nav"><div class="hp-in hp-nav-in">' +
       '<a class="hp-brand" href="#hp-top" aria-label="맨 위로">' + brand + (brand ? '<i class="hp-div" aria-hidden="true"></i>' : '') + tool + '</a>' +
       '<nav class="hp-links" aria-label="홈페이지 메뉴">' + (feats.length ? '<a href="#hp-features">기능</a>' : '') + (flow.length ? '<a href="#hp-flow">사용 순서</a>' : '') +
-      (S.screen && ((heroImg && !cover) || banner || slideOn()) ? '<a href="#hp-screen">화면</a>' : '') + (S.plan ? '<a href="' + esc(S.plan) + '">기획서</a>' : '') + '</nav>' +
+      (S.screen && ((heroImg && !cover) || banner || slideOn()) ? '<a href="#hp-screen">화면</a>' : '') + (S.plan ? '<a href="' + esc(S.plan) + '">기획서</a>' : '') + (S.report ? '<a href="' + esc(S.report) + '">평가보고서</a>' : '') + '</nav>' +
       (L.minimal ? '' : '<div class="hp-acts"><button type="button" class="hp-btn hp-ghost" data-login="login">로그인</button>' +
       '<button type="button" class="hp-btn hp-primary" data-login="signup">시작하기</button></div>') + '</div></header>';
     var cta = '<div class="hp-cta-row"><button type="button" class="hp-btn hp-primary hp-lg" data-login="login">' + esc(L.cta || (L.minimal ? '로그인' : '로그인하고 시작하기')) + ' ' + icon('arrow', 'hp-ic-s') + '</button>' +
-      (S.plan && !L.minimal ? '<a class="hp-btn hp-line hp-lg" href="' + esc(S.plan) + '">기획서 보기</a>' : '') + '</div>';
+      (S.plan && !L.minimal ? '<a class="hp-btn hp-line hp-lg" href="' + esc(S.plan) + '">기획서 보기</a>' : '') +
+      (S.report && !L.minimal ? '<a class="hp-btn hp-line hp-lg" href="' + esc(S.report) + '">평가보고서 보기</a>' : '') + '</div>';   // site.report 가 있을 때만(build-2611 과제)
     var trust = L.minimal ? '' : '<ul class="hp-trust-chips"><li>' + icon('shield', 'hp-ic-s') + '승인된 구성원만</li><li>' + icon('folder', 'hp-ic-s') + '자료는 내 브라우저에</li><li>' + icon('users', 'hp-ic-s') + '회사 · 개인 메일 가입</li></ul>';
     var frame = function (src, cap) {
       return '<figure class="hp-frame"><div class="hp-frame-bar"><i></i><i></i><i></i><span>' + esc((location.host || '').replace(/^www\./, '')) + '</span></div>' +

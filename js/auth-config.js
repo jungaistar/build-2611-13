@@ -80,6 +80,7 @@ window.AUTH_CONFIG = {
     ],
     "screen": "docs/img/screen.png",
     "plan": "plan.html",
+    "report": "report.html",
     "home": true,
     "guide": {
       "screens": [],
