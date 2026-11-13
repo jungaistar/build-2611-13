@@ -4,27 +4,35 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>머신러닝 기반 최적화 툴 — GP · RBFNN 예측 모델과 최적 설계조건</title>
-<meta name="description" content="실험·해석 데이터를 올리면 가우시안 프로세스 회귀(GP) 또는 RBFNN 모델을 하이퍼파라미터별로 만들어 비교하고, 고른 모델로 Grid Search 를 돌려 최적 설계조건을 찾습니다. 파일은 브라우저 안에서만 처리합니다.">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<!-- seo-kit: 검색 · 공유 미리보기(주소를 옮기면 이 묶음의 주소를 내 주소로) -->
 <link rel="canonical" href="https://build-2611-13.jobability.co.kr/">
 <meta name="robots" content="index,follow">
 <meta property="og:type" content="website">
-<meta property="og:site_name" content="생성형 AI 업무자동화 전문가과정 · 2차수">
+<meta property="og:site_name" content="HD현대사이트솔루션">
+<meta property="og:title" content="HD현대사이트솔루션 · 머신러닝 기반 최적화 툴">
+<meta property="og:description" content="실험·해석 데이터로 GP(가우시안 프로세스 회귀) 또는 RBFNN(방사 기저 함수 신경망) 모델을 하이퍼파라미터 조합마다 만들어 검증 R²로 비교·선정하고, 고른 모델로 Grid Search 를 돌려 최적 설계조건을 찾고, 두 인자를 골라 3D 반응 곡면을 돌려 보는 브라우저 도구입니다">
 <meta property="og:url" content="https://build-2611-13.jobability.co.kr/">
-<meta property="og:title" content="머신러닝 기반 최적화 툴 — 생성형 AI 업무자동화 전문가과정 2차수">
-<meta property="og:description" content="실험 데이터로 GPR 모델을 만들어 비교하고 Grid Search 로 최적 설계조건을 찾습니다.">
-<meta property="og:image" content="https://build-2611-13.jobability.co.kr/og-index.png">
+<meta property="og:image" content="https://build-2611-13.jobability.co.kr/og-image.png">
+<meta property="og:image:secure_url" content="https://build-2611-13.jobability.co.kr/og-image.png">
+<meta property="og:image:type" content="image/png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
+<meta property="og:image:alt" content="머신러닝 기반 최적화 툴">
 <meta property="og:locale" content="ko_KR">
 <meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="HD현대사이트솔루션 · 머신러닝 기반 최적화 툴">
+<meta name="twitter:description" content="실험·해석 데이터로 GP(가우시안 프로세스 회귀) 또는 RBFNN(방사 기저 함수 신경망) 모델을 하이퍼파라미터 조합마다 만들어 검증 R²로 비교·선정하고, 고른 모델로 Grid Search 를 돌려 최적 설계조건을 찾고, 두 인자를 골라 3D 반응 곡면을 돌려 보는 브라우저 도구입니다">
+<meta name="twitter:image" content="https://build-2611-13.jobability.co.kr/og-image.png">
+<!-- /seo-kit -->
+<meta name="description" content="실험·해석 데이터로 GP(가우시안 프로세스 회귀) 또는 RBFNN(방사 기저 함수 신경망) 모델을 하이퍼파라미터 조합마다 만들어 검증 R²로 비교·선정하고, 고른 모델로 Grid Search 를 돌려 최적 설계조건을 찾고, 두 인자를 골라 3D 반응 곡면을 돌려 보는 브라우저 도구입니다.">
+<link rel="icon" href="favicon.svg" type="image/svg+xml">
 <link rel="stylesheet" href="css/style.css">
 <link rel="stylesheet" href="css/app.css">
 <!-- auth-kit: 로그인 전에는 도구 화면을 감춘다(js/auth.js 가 판정 뒤 푼다) -->
 <script>document.documentElement.classList.add('auth-lock')</script>
-<link rel="stylesheet" href="css/auth.css?v=2026-11-13.10">
-<link rel="stylesheet" href="css/board.css?v=2026-11-13.10">
-<link rel="stylesheet" href="css/kit-build.css?v=2026-11-13.10">
+<link rel="stylesheet" href="css/auth.css?v=2026-11-13.11">
+<link rel="stylesheet" href="css/board.css?v=2026-11-13.11">
+<link rel="stylesheet" href="css/kit-build.css?v=2026-11-13.11">
 <!-- /auth-kit -->
 </head>
 <body>
@@ -209,11 +217,11 @@
 <script src="js/gpr.js"></script>
 <script src="js/app.js"></script>
 <!-- auth-kit: 로그인 · 사용 신청 · 승인 · 게시판(키트 정본 data10-00/kit/auth, 적용 build-2611-00/tools/kit) -->
-<script src="vendor/supabase.js?v=2026-11-13.10"></script>
-<script src="js/auth-config.js?v=2026-11-13.10"></script>
-<script src="js/kit-build.js?v=2026-11-13.10"></script>
-<script src="js/board.js?v=2026-11-13.10"></script>
-<script src="js/auth.js?v=2026-11-13.10"></script>
+<script src="vendor/supabase.js?v=2026-11-13.11"></script>
+<script src="js/auth-config.js?v=2026-11-13.11"></script>
+<script src="js/kit-build.js?v=2026-11-13.11"></script>
+<script src="js/board.js?v=2026-11-13.11"></script>
+<script src="js/auth.js?v=2026-11-13.11"></script>
 <!-- /auth-kit -->
 </body>
 </html>
