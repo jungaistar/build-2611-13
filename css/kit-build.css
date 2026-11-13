@@ -35,3 +35,7 @@
   .kit-has-side section,.kit-has-side [id]{scroll-margin-top:16px;}
 }
 @media print{ .kit-bar,.kit-side{display:none !important;} .kit-has-side body{padding-left:0;} }
+
+/* 왼쪽 메뉴를 쓰지 않는 과제(landing.kitSide: false) — 고정된 위쪽 메뉴 아래에 계정 줄을 둔다 */
+.kit-no-side .kit-bar{margin-top:56px;} .kit-no-side .hero{margin-top:0;}
+@media (max-width:860px){ .kit-no-side .kit-bar{margin-top:52px;} }

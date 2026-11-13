@@ -151,8 +151,8 @@ window.AUTH_CONFIG = {
     },
     "landing": {
       "company": {
-        "name": "HD건설기계",
-        "en": "HD CONSTRUCTION EQUIPMENT",
+        "name": "HD현대사이트솔루션",
+        "en": "HD HYUNDAI SITE SOLUTION",
         "logo": "images/logo.png",
         "logoH": 24
       },
@@ -164,9 +164,14 @@ window.AUTH_CONFIG = {
         {
           "image": "images/slide-2.jpg",
           "tone": "dark"
+        },
+        {
+          "image": "images/slide-3.jpg",
+          "tone": "dark"
         }
       ],
-      "heroMode": "slide"
+      "heroMode": "slide",
+      "kitSide": false
     }
   }
 };

@@ -13,7 +13,10 @@
     el.style.setProperty('background-color', cs.backgroundColor, 'important'); el.style.setProperty('background-image', cs.backgroundImage, 'important'); el.style.setProperty('color', cs.color, 'important');
   });
   var tn = document.querySelector('nav.topnav'), ul = tn && tn.querySelector('.topnav-links'), brand = tn && tn.querySelector('.topnav-brand');
-  if (ul && !document.querySelector('aside #nav')) {
+  // 과제가 왼쪽 메뉴를 원하지 않으면(plan.json landing.kitSide: false) 위쪽 메뉴를 그대로 둔다 — 게시판 · 관리는 계정 줄에서 연다
+  var C = window.AUTH_CONFIG || {}, noSide = !!(C.site && C.site.landing && C.site.landing.kitSide === false);
+  if (noSide) document.documentElement.classList.add('kit-no-side');
+  if (ul && !noSide && !document.querySelector('aside #nav')) {
     var side = document.createElement('aside'); side.className = 'sidebar kit-side'; side.setAttribute('aria-label', '주요 메뉴');
     if (brand) side.appendChild(brand);
     if (!document.getElementById('nav')) ul.id = 'nav';
